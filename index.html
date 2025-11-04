@@ -302,6 +302,13 @@
         // Function to set up Firebase and Authentication
         async function setupFirebase() {
             try {
+                // CRITICAL CHECK: Ensure the configuration is not empty
+                if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
+                    console.error("FATAL ERROR: Firebase configuration is missing or empty. Cannot initialize app.");
+                    showMessage("FATAL: Database configuration missing. Cannot connect.", 'error');
+                    return; // Stop execution
+                }
+
                 setLogLevel('debug'); // For logging
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -330,7 +337,8 @@
 
             } catch (error) {
                 console.error("Firebase setup failed:", error);
-                showMessage("Failed to connect to the database. Check console.", 'error');
+                console.error("Configuration used:", firebaseConfig); // Log config for diagnosis
+                showMessage("Database connection failed. Check console for details.", 'error');
             }
         }
         
@@ -451,12 +459,12 @@
         function renderInventory(books) {
             const inventoryList = document.getElementById('inventoryList');
             const bookCountSpan = document.getElementById('bookCount');
-            const loadingIndicator = document.getElementById('loadingIndicator'); // Get the element
+            const loadingIndicator = document.getElementById('loadingIndicator'); 
             
             inventoryList.innerHTML = '';
             bookCountSpan.textContent = `${books.length} Books`;
             
-            // FIX: Added null check to prevent TypeError if the element hasn't loaded yet.
+            // Added null check here to prevent the previous TypeError
             if (loadingIndicator) {
                 loadingIndicator.style.display = 'none';
             }
