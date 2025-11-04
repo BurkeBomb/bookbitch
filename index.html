@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book Inventory & Photo Upload</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Font */
+        body {
+            font-family: "Inter", sans-serif;
+        }
+        /* Hide the default file input text field */
+        #bookPhoto {
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+            border: 1px solid #d1d5db;
+        }
+        /* Custom styling for the file input button (now Indigo) */
+        input[type="file"]::file-selector-button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            border: none;
+            background-color: #4f46e5; /* Indigo 600 */
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background-color: #4338ca; /* Indigo 700 */
+        }
+        .message-box {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 25px;
+            border-radius: 8px;
+            background-color: #6366f1; /* Default success color (Indigo 500) */
+            color: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            opacity: 0;
+            transition: opacity 0.5s, transform 0.5s;
+            transform: translateY(-20px);
+            z-index: 1000;
+        }
+        .message-box.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        /* Modal Backdrop */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0s, opacity 0.3s;
+        }
+        .modal-backdrop.show {
+            visibility: visible;
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 min-h-screen p-4 sm:p-8">
+
+    <!-- 1. Inventory List Section (Main Item) -->
+    <div class="max-w-xl mx-auto mb-8 bg-white p-6 sm:p-8 rounded-xl shadow-2xl border border-gray-100">
+        <h2 class="text-3xl font-extrabold text-slate-900 mb-4 flex items-center justify-between">
+            My Book Collection 
+            <span id="bookCount" class="px-3 py-1 text-base font-semibold text-indigo-700 bg-indigo-100 rounded-full shadow-md">0 Books</span>
+        </h2>
+        
+        <!-- User ID Display and Export Controls -->
+        <div id="exportControls" class="pb-4 border-b border-gray-200 mb-6 hidden">
+            <p class="text-xs text-slate-500">
+                Logged in as: 
+                <span id="displayUserId" class="font-mono text-xs bg-gray-100 p-1 rounded-md text-slate-700">...</span>
+            </p>
+            <div class="flex space-x-4 mt-3">
+                <button type="button" id="exportCsvBtn" class="flex-1 px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg shadow-md hover:bg-emerald-700 transition duration-300 text-sm">
+                    Export to CSV
+                </button>
+                <button type="button" id="exportJsonBtn" class="flex-1 px-4 py-2 bg-slate-700 text-white font-semibold rounded-lg shadow-md hover:bg-slate-800 transition duration-300 text-sm">
+                    Export to JSON
+                </button>
+            </div>
+        </div>
+
+        <!-- Filter & Sort Controls -->
+        <div class="mb-6 space-y-4">
+            <div class="flex space-x-2 text-sm justify-between flex-wrap">
+                <button id="filterAllBtn" class="filter-btn px-3 py-1 bg-indigo-700 text-white rounded-lg shadow-md hover:bg-indigo-600 transition text-sm">
+                    Show All
+                </button>
+                <button id="filterWishlistBtn" class="filter-btn px-3 py-1 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition text-sm">
+                    Wishlist
+                </button>
+                <button id="filterBorrowedBtn" class="filter-btn px-3 py-1 bg-gray-200 text-gray-700 rounded-lg shadow-md hover:bg-gray-300 transition text-sm">
+                    Borrowed
+                </button>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <label for="sortSelect" class="text-sm font-medium text-slate-700">Sort By:</label>
+                <select id="sortSelect" class="flex-1 p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 bg-white text-sm">
+                    <option value="title-asc">Title (A-Z)</option>
+                    <option value="title-desc">Title (Z-A)</option>
+                    <option value="author-asc">Author (A-Z)</option>
+                    <option value="price-desc">Price (High to Low)</option>
+                    <option value="price-asc">Price (Low to High)</option>
+                    <option value="added-desc" selected>Date Added (Newest)</option>
+                    <option value="added-asc">Date Added (Oldest)</option>
+                </select>
+            </div>
+        </div>
+        
+        <div id="inventoryList" class="space-y-4">
+            <!-- Books will be rendered here dynamically -->
+            <p id="loadingIndicator" class="text-slate-500 text-center py-4">Loading inventory...</p>
+        </div>
+    </div>
+
+    <!-- 2. Book Entry Form (Secondary Item) -->
+    <div class="max-w-xl mx-auto bg-white p-6 sm:p-8 rounded-xl shadow-2xl border border-gray-100">
+        <h1 id="formTitle" class="text-2xl font-bold text-indigo-700 mb-6 text-center tracking-tight">
+            + Add New Book Entry
+        </h1>
+        
+        <!-- Search Input Field -->
+        <div class="mb-6">
+            <input type="text" id="searchInput" placeholder="Search by Title, Author, or Genre..." 
+                   class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 shadow-inner text-slate-700">
+        </div>
+
+        <!-- Form Validation Error Message -->
+        <div id="formError" class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-4 hidden" role="alert">
+            <strong class="font-bold">Error!</strong>
+            <span id="formErrorMessage" class="block sm:inline ml-2"></span>
+        </div>
+
+        <form class="book-form space-y-6">
+            <!-- Hidden field to track if we are editing a document -->
+            <input type="hidden" id="editingBookId" data-editing-id="" />
+
+            <!-- Book Details -->
+            <div class="space-y-4 border-b pb-6 border-gray-200">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="form-group">
+                        <label for="title" class="block text-sm font-medium text-slate-700 mb-1">Book Title</label>
+                        <input type="text" id="title" name="title" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                    </div>
+                    <div class="form-group">
+                        <label for="author" class="block text-sm font-medium text-slate-700 mb-1">Author</label>
+                        <input type="text" id="author" name="author" required class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div class="form-group">
+                        <label for="genre" class="block text-sm font-medium text-slate-700 mb-1">Genre</label>
+                        <input type="text" id="genre" name="genre" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                    </div>
+                    <div class="form-group">
+                        <label for="price" class="block text-sm font-medium text-slate-700 mb-1">Price Paid ($)</label>
+                        <input type="number" step="0.01" id="price" name="price" value="0.00" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                    </div>
+                    <div class="form-group">
+                        <label for="rarity" class="block text-sm font-medium text-slate-700 mb-1">Rarity</label>
+                        <select id="rarity" name="rarity" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 bg-white">
+                            <option value="common">Common</option>
+                            <option value="rare">Rare</option>
+                            <option value="very-rare">Very Rare</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="description" class="block text-sm font-medium text-slate-700 mb-1">Notes/Description</label>
+                    <textarea id="description" name="description" rows="3" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"></textarea>
+                </div>
+            </div>
+
+            <!-- Image Upload/Camera Button (Vibrant Pink Box) -->
+            <div class="form-group bg-pink-100 p-4 rounded-lg border-2 border-pink-200">
+                <label for="bookPhoto" class="block text-lg font-bold text-pink-800 mb-2 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.866-1.448A2 2 0 0111.45 4h1.1a2 2 0 011.664.89l.866 1.448A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Book Photo (Cover/Spine)
+                </label>
+                <input 
+                    type="file" 
+                    id="bookPhoto" 
+                    name="bookPhoto" 
+                    accept="image/*" 
+                    capture="environment" 
+                    class="block w-full text-sm text-slate-900 border border-gray-300 rounded-lg cursor-pointer bg-white"
+                >
+                <small class="text-pink-700 mt-2 block">
+                    Use your device's camera for a quick photo, or upload an existing file. (Image data is not saved to Firestore due to size limits).
+                </small>
+            </div>
+
+            <!-- Borrowing Status -->
+            <div class="space-y-3 pt-6 border-t border-gray-200">
+                <h3 class="text-lg font-bold text-indigo-700">Lending Status</h3>
+                <div class="form-group flex items-center space-x-3">
+                    <input id="isBorrowed" name="isBorrowed" type="checkbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <label for="isBorrowed" class="text-sm text-slate-700">
+                        Is this book currently borrowed?
+                    </label>
+                </div>
+                <div class="form-group" id="borrowerInputContainer" style="display: none;">
+                    <label for="borrowedBy" class="block text-sm font-medium text-slate-700 mb-1">Borrowed By</label>
+                    <input type="text" id="borrowedBy" name="borrowedBy" placeholder="Enter borrower's name" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                </div>
+            </div>
+
+
+            <!-- Action and Checkbox -->
+            <div class="flex items-center justify-between pt-4">
+                <div class="flex items-center">
+                    <input id="wishlist" name="wishlist" type="checkbox" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                    <label for="wishlist" class="ml-2 block text-sm text-slate-900">
+                        Add to Wishlist?
+                    </label>
+                </div>
+                
+                <div class="flex space-x-3">
+                    <button type="button" id="cancelEditBtn" class="px-4 py-2 bg-gray-300 text-gray-700 font-semibold rounded-lg shadow-md hover:bg-gray-400 focus:outline-none transition duration-300 hidden">
+                        Cancel Edit
+                    </button>
+                    <button type="submit" id="submitFormBtn" class="px-6 py-2 bg-indigo-700 text-white font-semibold rounded-lg shadow-lg hover:bg-indigo-800 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-300 transform hover:scale-105">
+                        Save Book
+                    </button>
+                </div>
+            </div>
+            
+        </form>
+    </div>
+
+    <!-- Custom Message Box for success notification -->
+    <div id="successMessage" class="message-box"></div>
+
+    <!-- Confirmation Modal Dialog -->
+    <div id="confirmationModal" class="modal-backdrop">
+        <div class="bg-white p-6 rounded-lg shadow-2xl max-w-sm w-full transform transition-all scale-100">
+            <h3 class="text-xl font-bold text-red-600 mb-4">Confirm Deletion</h3>
+            <p id="modalMessage" class="text-slate-700 mb-6">Are you sure you want to delete this book?</p>
+            <div class="flex justify-end space-x-4">
+                <button id="cancelModalBtn" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition">
+                    Cancel
+                </button>
+                <button id="confirmDeleteBtn" class="px-4 py-2 bg-red-600 text-white font-semibold rounded-lg shadow-md hover:bg-red-700 transition">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, getDocs, setLogLevel, onSnapshot, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Globals and Setup ---
+        let db;
+        let auth;
+        let userId = null;
+        let booksCollectionRef;
+        let allBooks = []; // Global variable to hold the complete, unfiltered list
+        
+        // --- State Variables ---
+        let currentFilter = 'all'; // 'all', 'wishlist', 'borrowed'
+        let currentSort = 'added-desc'; // Initial sort by Date Added (Newest)
+        
+        /*
+        * ----------------------------------------------------------------------
+        * FIREBASE CONFIGURATION (MANDATORY GLOBALS)
+        * These variables are automatically injected by the platform.
+        * DO NOT change their definitions here.
+        * ----------------------------------------------------------------------
+        */
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+
+        // Function to set up Firebase and Authentication
+        async function setupFirebase() {
+            try {
+                setLogLevel('debug'); // For logging
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Authenticate user
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    // Fallback to anonymous sign-in for external environments
+                    await signInAnonymously(auth); 
+                }
+
+                userId = auth.currentUser?.uid || crypto.randomUUID();
+                
+                // Define the collection path based on the user ID and app ID (Private Data)
+                const collectionPath = `/artifacts/${appId}/users/${userId}/books`;
+                booksCollectionRef = collection(db, collectionPath);
+
+                console.log("Firebase initialized. User ID:", userId, "Collection Path:", collectionPath);
+                
+                document.getElementById('displayUserId').textContent = userId;
+                document.getElementById('exportControls').classList.remove('hidden');
+
+                startInventoryListener();
+
+            } catch (error) {
+                console.error("Firebase setup failed:", error);
+                showMessage("Failed to connect to the database. Check console.", 'error');
+            }
+        }
+        
+        // --- Inventory Real-Time Listener ---
+
+        function startInventoryListener() {
+            if (!booksCollectionRef) return;
+            
+            // Querying the collection
+            const q = query(booksCollectionRef);
+
+            // Setting up the real-time listener
+            onSnapshot(q, (snapshot) => {
+                const fetchedBooks = [];
+                snapshot.forEach((doc) => {
+                    fetchedBooks.push({ id: doc.id, ...doc.data() });
+                });
+                
+                // Store the full list
+                allBooks = fetchedBooks;
+
+                // Apply current filters, search, and sort, then render
+                sortFilterAndRender();
+
+            }, (error) => {
+                console.error("Error listening to inventory changes:", error);
+                showMessage("Failed to load inventory in real-time.", 'error');
+            });
+        }
+        
+        // --- Sorting Logic ---
+        function sortBooks(books, criteria) {
+            return books.sort((a, b) => {
+                const [field, order] = criteria.split('-');
+                let valA, valB;
+
+                switch (field) {
+                    case 'title':
+                    case 'author':
+                        valA = a[field].toLowerCase();
+                        valB = b[field].toLowerCase();
+                        if (valA < valB) return order === 'asc' ? -1 : 1;
+                        if (valA > valB) return order === 'asc' ? 1 : -1;
+                        return 0;
+                    case 'price':
+                        // Use 0 if price is missing or null
+                        valA = a.price || 0;
+                        valB = b.price || 0;
+                        return order === 'asc' ? valA - valB : valB - valA;
+                    case 'added':
+                        // Safely convert Firestore Timestamp to milliseconds for comparison
+                        valA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+                        valB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+                        return order === 'asc' ? valA - valB : valB - valA;
+                    default:
+                        return 0;
+                }
+            });
+        }
+        
+        // --- Combined Sort, Filter, and Search Function ---
+        function sortFilterAndRender() {
+            let booksToRender = allBooks.slice(); // Start with a copy
+            
+            // 1. Apply Filter Buttons (Wishlist/Borrowed)
+            if (currentFilter === 'wishlist') {
+                booksToRender = booksToRender.filter(book => book.wishlist);
+            } else if (currentFilter === 'borrowed') {
+                booksToRender = booksToRender.filter(book => book.isBorrowed);
+            }
+
+            // 2. Apply Search Filter (Case-insensitive)
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
+            if (searchTerm !== "") {
+                booksToRender = booksToRender.filter(book => {
+                    const titleMatch = book.title.toLowerCase().includes(searchTerm);
+                    const authorMatch = book.author.toLowerCase().includes(searchTerm);
+                    const genreMatch = book.genre ? book.genre.toLowerCase().includes(searchTerm) : false;
+                    const descriptionMatch = book.description ? book.description.toLowerCase().includes(searchTerm) : false;
+                    
+                    return titleMatch || authorMatch || genreMatch || descriptionMatch;
+                });
+            }
+
+            // 3. Apply Sort Order
+            booksToRender = sortBooks(booksToRender, currentSort);
+
+            renderInventory(booksToRender);
+            updateFilterButtonStates();
+        }
+
+        // Updates the visual state of the filter buttons
+        function updateFilterButtonStates() {
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.replace('bg-indigo-700', 'bg-gray-200');
+                btn.classList.replace('text-white', 'text-gray-700');
+            });
+            
+            // Determine the ID of the button to activate
+            let activeBtnId;
+            if (currentFilter === 'all') {
+                activeBtnId = 'filterAllBtn';
+            } else {
+                // Capitalize the filter name (e.g., 'wishlist' -> 'Wishlist')
+                activeBtnId = `filter${currentFilter.charAt(0).toUpperCase() + currentFilter.slice(1)}Btn`;
+            }
+            
+            const activeBtn = document.getElementById(activeBtnId);
+            
+            if (activeBtn) {
+                activeBtn.classList.replace('bg-gray-200', 'bg-indigo-700');
+                activeBtn.classList.replace('text-gray-700', 'text-white');
+            }
+        }
+        
+        // --- Inventory Rendering ---
+
+        function renderInventory(books) {
+            const inventoryList = document.getElementById('inventoryList');
+            const bookCountSpan = document.getElementById('bookCount');
+            const loadingIndicator = document.getElementById('loadingIndicator'); // Get the element
+            
+            inventoryList.innerHTML = '';
+            bookCountSpan.textContent = `${books.length} Books`;
+            
+            // FIX: Added null check to prevent TypeError if the element hasn't loaded yet.
+            if (loadingIndicator) {
+                loadingIndicator.style.display = 'none';
+            }
+
+            if (books.length === 0) {
+                inventoryList.innerHTML = '<p class="text-slate-500 text-center py-4 bg-gray-50 rounded-lg">No books match the current filters or search terms.</p>';
+                return;
+            }
+            
+            books.forEach(book => {
+                // Status Badges
+                const isBorrowed = book.isBorrowed ? 
+                    `<span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-red-500 text-white">Borrowed by ${book.borrowedBy || 'Unknown'}</span>` : 
+                    `<span class="px-2 py-0.5 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-600">Available</span>`;
+
+                const isWishlist = book.wishlist ? 
+                    `<span class="ml-2 px-2 py-0.5 text-xs font-semibold rounded-full bg-yellow-400 text-yellow-900">Wishlist</span>` : '';
+
+                // Rarity Styling
+                const rarityColor = {
+                    'common': 'text-slate-500',
+                    'rare': 'text-purple-600 font-medium',
+                    'very-rare': 'text-fuchsia-700 font-bold'
+                }[book.rarity] || 'text-slate-500';
+
+                const cardHtml = `
+                    <div class="p-4 border border-gray-200 bg-gray-50 rounded-lg shadow-md transition duration-200 hover:shadow-lg hover:border-indigo-300">
+                        <div class="flex justify-between items-start">
+                            <h3 class="text-xl font-extrabold text-indigo-800">${book.title}</h3>
+                            <div class="flex items-center space-x-2 text-sm text-slate-500">
+                                <span class="${rarityColor} capitalize">${book.rarity}</span>
+                                ${isWishlist}
+                            </div>
+                        </div>
+                        <p class="text-sm text-slate-600 italic">by ${book.author}</p>
+                        <div class="mt-2 text-sm space-y-2">
+                            <p class="flex items-center space-x-3">
+                                ${isBorrowed}
+                                <span class="text-slate-500"> | Price: <span class="font-mono text-slate-700">$${(book.price ?? 0).toFixed(2)}</span></span>
+                            </p>
+                            <div class="flex space-x-2 pt-2">
+                                <button data-id="${book.id}" class="edit-btn px-3 py-1 text-xs bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition">
+                                    Edit
+                                </button>
+                                <button data-id="${book.id}" data-title="${book.title}" class="delete-btn px-3 py-1 text-xs bg-red-500 text-white rounded-md hover:bg-red-600 transition">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                inventoryList.insertAdjacentHTML('beforeend', cardHtml);
+            });
+            
+            attachBookCardListeners();
+        }
+        
+        // --- CRUD Operations ---
+        
+        let bookToDeleteId = null;
+        const modal = document.getElementById('confirmationModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+        const cancelModalBtn = document.getElementById('cancelModalBtn');
+
+
+        function attachBookCardListeners() {
+            // Remove previous listeners to prevent duplicates
+            document.querySelectorAll('.edit-btn, .delete-btn').forEach(button => {
+                button.replaceWith(button.cloneNode(true));
+            });
+
+            // Re-attach listeners to the cloned elements
+            document.querySelectorAll('.edit-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const id = e.target.getAttribute('data-id');
+                    editBook(id);
+                });
+            });
+
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    bookToDeleteId = e.target.getAttribute('data-id');
+                    const bookTitle = e.target.getAttribute('data-title');
+                    modalMessage.textContent = `Are you sure you want to permanently delete the book "${bookTitle}"? This cannot be undone.`;
+                    modal.classList.add('show');
+                });
+            });
+        }
+        
+        async function deleteBook(id) {
+            if (!booksCollectionRef) {
+                showMessage("Database connection error.", 'error');
+                return;
+            }
+            try {
+                const bookDocRef = doc(booksCollectionRef, id);
+                await deleteDoc(bookDocRef);
+                showMessage("Book deleted successfully!");
+            } catch (e) {
+                console.error("Error deleting document: ", e);
+                showMessage("Error deleting book. Check console.", 'error');
+            }
+        }
+        
+        function editBook(id) {
+            const book = allBooks.find(b => b.id === id);
+            if (!book) {
+                showMessage("Book not found for editing.", 'error');
+                return;
+            }
+            
+            clearFormError(); // Clear any previous form errors
+            
+            // Update form visuals
+            document.getElementById('formTitle').textContent = `Editing: ${book.title}`;
+            document.getElementById('submitFormBtn').textContent = 'Update Book';
+            document.getElementById('submitFormBtn').classList.replace('bg-indigo-700', 'bg-green-600');
+            document.getElementById('submitFormBtn').classList.replace('hover:bg-indigo-800', 'hover:bg-green-700');
+            document.getElementById('cancelEditBtn').classList.remove('hidden');
+            
+            // Set the hidden ID field
+            document.getElementById('editingBookId').value = id;
+
+            // Populate form fields
+            document.getElementById('title').value = book.title;
+            document.getElementById('author').value = book.author;
+            document.getElementById('genre').value = book.genre || '';
+            document.getElementById('price').value = (book.price ?? 0).toFixed(2); // Format price
+            document.getElementById('rarity').value = book.rarity || 'common';
+            document.getElementById('description').value = book.description || '';
+            document.getElementById('wishlist').checked = book.wishlist || false;
+            
+            // Handle borrowing status
+            const isBorrowed = book.isBorrowed || false;
+            document.getElementById('isBorrowed').checked = isBorrowed;
+            borrowerContainer.style.display = isBorrowed ? 'block' : 'none';
+            document.getElementById('borrowedBy').value = book.borrowedBy || '';
+
+            // Scroll the form into view
+            document.getElementById('formTitle').scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        function resetFormToAdd() {
+            bookForm.reset();
+            document.getElementById('editingBookId').value = '';
+            document.getElementById('formTitle').textContent = '+ Add New Book Entry';
+            document.getElementById('submitFormBtn').textContent = 'Save Book';
+            document.getElementById('submitFormBtn').classList.replace('bg-green-600', 'bg-indigo-700');
+            document.getElementById('submitFormBtn').classList.replace('hover:bg-green-700', 'hover:bg-indigo-800');
+            document.getElementById('cancelEditBtn').classList.add('hidden');
+            borrowerContainer.style.display = 'none';
+            clearFormError();
+        }
+
+
+        // --- Utility Functions ---
+
+        // Function to display FORM validation errors
+        function showFormError(message) {
+            document.getElementById('formErrorMessage').textContent = message;
+            document.getElementById('formError').classList.remove('hidden');
+        }
+
+        function clearFormError() {
+             document.getElementById('formError').classList.add('hidden');
+             document.getElementById('formErrorMessage').textContent = '';
+        }
+
+        // Function to display non-alert messages
+        function showMessage(text, type = 'success') {
+            const msgBox = document.getElementById('successMessage');
+            msgBox.textContent = text;
+            
+            if (type === 'error') {
+                msgBox.style.backgroundColor = '#dc2626'; // Red 600
+            } else if (type === 'info') {
+                msgBox.style.backgroundColor = '#f59e0b'; // Amber 600
+            } else {
+                msgBox.style.backgroundColor = '#6366f1'; // Indigo 500
+            }
+            
+            msgBox.classList.add('show');
+            setTimeout(() => {
+                msgBox.classList.remove('show');
+            }, 5000);
+        }
+        
+        function convertToCSV(data) {
+            if (data.length === 0) return '';
+            
+            // Safely gather all unique keys for headers
+            const allKeys = data.reduce((keys, item) => {
+                Object.keys(item).forEach(key => {
+                    if (!keys.includes(key)) keys.push(key);
+                });
+                return keys;
+            }, []);
+
+            const headers = ['id', ...allKeys.filter(key => key !== 'id')];
+            const csvHeader = headers.join(',');
+
+            const csvRows = data.map(item => {
+                return headers.map(header => {
+                    let value = item[header] ?? '';
+                    
+                    if (typeof value === 'object' && value !== null) {
+                        // Handle Firestore Timestamp
+                        if (value.toDate) {
+                            value = value.toDate().toISOString();
+                        } else {
+                            // JSON.stringify for other complex objects (like map)
+                            value = JSON.stringify(value);
+                        }
+                    }
+                    
+                    // Escape commas, quotes, and newlines by wrapping in double quotes
+                    if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+                        value = `"${value.replace(/"/g, '""')}"`;
+                    }
+                    return value;
+                }).join(',');
+            });
+
+            return [csvHeader, ...csvRows].join('\n');
+        }
+
+        function convertToJSON(data) {
+            return JSON.stringify(data, null, 2);
+        }
+
+        function downloadFile(content, fileName, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showMessage(`Export successful! Downloading ${fileName}.`);
+        }
+        
+        async function handleExport(format) {
+            if (!booksCollectionRef) {
+                showMessage("Database connection error. Please wait for initialization.", 'error');
+                return;
+            }
+            
+            showMessage("Fetching data for export...", 'info');
+
+            try {
+                // Fetch the latest data once
+                const q = query(booksCollectionRef);
+                const querySnapshot = await getDocs(q);
+                
+                const books = [];
+                querySnapshot.forEach((doc) => {
+                    books.push({ id: doc.id, ...doc.data() });
+                });
+
+                if (books.length === 0) {
+                     showMessage("No books found in inventory to export.", 'error');
+                     return;
+                }
+
+                const baseFileName = `book_inventory_${new Date().toISOString().slice(0, 10)}`;
+                
+                if (format === 'csv') {
+                    const csvContent = convertToCSV(books);
+                    downloadFile(csvContent, `${baseFileName}.csv`, 'text/csv;charset=utf-8;');
+                } else if (format === 'json') {
+                    const jsonContent = convertToJSON(books);
+                    downloadFile(jsonContent, `${baseFileName}.json`, 'application/json');
+                }
+
+            } catch (e) {
+                console.error(`Error exporting data to ${format}:`, e);
+                showMessage(`Failed to export data to ${format}. Check console.`, 'error');
+            }
+        }
+
+        // --- Main Logic and Event Listeners ---
+        
+        setupFirebase();
+
+        const bookForm = document.querySelector('.book-form');
+        const isBorrowedCheckbox = document.getElementById('isBorrowed');
+        const borrowerContainer = document.getElementById('borrowerInputContainer');
+        const borrowedByInput = document.getElementById('borrowedBy');
+        const editingBookIdInput = document.getElementById('editingBookId');
+
+
+        // Borrowing UI Toggle
+        isBorrowedCheckbox.addEventListener('change', function() {
+            borrowerContainer.style.display = this.checked ? 'block' : 'none';
+            if (!this.checked) {
+                borrowedByInput.value = '';
+            }
+        });
+
+
+        // Form Submission (Handles BOTH Add and Update)
+        bookForm.addEventListener('submit', async function(event) {
+            event.preventDefault();
+            clearFormError(); // Clear previous error
+
+            if (!booksCollectionRef) {
+                showFormError("Database not ready. Please wait for initialization.");
+                return;
+            }
+            
+            const isEditing = editingBookIdInput.value !== '';
+            const docId = editingBookIdInput.value;
+            const isBorrowed = isBorrowedCheckbox.checked;
+            const borrowedBy = borrowedByInput.value.trim();
+            
+            // Input sanitation and validation
+            const priceValue = document.getElementById('price').value;
+            const price = parseFloat(priceValue);
+
+            if (isNaN(price) || price < 0) {
+                showFormError("Price Paid must be a valid, non-negative number.");
+                return;
+            }
+            if (document.getElementById('title').value.trim() === '' || document.getElementById('author').value.trim() === '') {
+                showFormError("Book Title and Author are required fields.");
+                return;
+            }
+            if (isBorrowed && borrowedBy === '') {
+                showFormError("If the book is currently borrowed, you must enter the borrower's name.");
+                return;
+            }
+            
+
+            try {
+                const bookData = {
+                    title: document.getElementById('title').value.trim(),
+                    author: document.getElementById('author').value.trim(),
+                    genre: document.getElementById('genre').value.trim(),
+                    price: price, 
+                    rarity: document.getElementById('rarity').value,
+                    description: document.getElementById('description').value.trim(),
+                    wishlist: document.getElementById('wishlist').checked,
+                    
+                    isBorrowed: isBorrowed,
+                    borrowedBy: isBorrowed ? borrowedBy : null,
+                };
+
+                const photoInput = document.getElementById('bookPhoto');
+                
+                // Note on image: Due to Firestore limits, we only save metadata, not the binary data.
+                if (photoInput.files.length > 0) {
+                    // Update photo metadata if a new file is selected
+                    bookData.hasPhoto = true;
+                    bookData.photoFileName = photoInput.files[0].name;
+                    bookData.photoMimeType = photoInput.files[0].type;
+                } else if (!isEditing) {
+                    // Only set hasPhoto to false when adding a new book without a photo
+                     bookData.hasPhoto = false;
+                }
+                
+
+                if (isEditing) {
+                    // UPDATE existing document
+                    const bookDocRef = doc(booksCollectionRef, docId);
+                    await updateDoc(bookDocRef, { ...bookData, updatedAt: new Date() });
+                    showMessage(`Book: "${bookData.title}" updated successfully!`);
+                    resetFormToAdd();
+                } else {
+                    // ADD new document
+                    // Assign createdAt time only on creation
+                    const docRef = await addDoc(booksCollectionRef, { 
+                        ...bookData, 
+                        createdAt: new Date(), 
+                        // Ensure hasPhoto is set correctly for a new entry
+                        hasPhoto: photoInput.files.length > 0 
+                    });
+                    showMessage(`Book: "${bookData.title}" saved successfully! ID: ${docRef.id}`);
+                    bookForm.reset();
+                    borrowerContainer.style.display = 'none';
+                }
+
+            } catch (e) {
+                console.error("Error saving/updating document: ", e);
+                showFormError(`Error ${isEditing ? 'updating' : 'saving'} book data. Check console.`);
+            }
+        });
+
+        // Cancel Edit Button
+        document.getElementById('cancelEditBtn').addEventListener('click', () => {
+            resetFormToAdd();
+            showMessage("Edit canceled. Ready to add a new book.");
+        });
+
+        // Export button event listeners
+        document.getElementById('exportCsvBtn').addEventListener('click', () => handleExport('csv'));
+        document.getElementById('exportJsonBtn').addEventListener('click', () => handleExport('json'));
+
+        // Event listeners for sorting and filtering
+        document.getElementById('searchInput').addEventListener('input', sortFilterAndRender);
+        document.getElementById('sortSelect').addEventListener('change', (e) => {
+            currentSort = e.target.value;
+            sortFilterAndRender();
+        });
+        
+        document.getElementById('filterAllBtn').addEventListener('click', () => {
+            currentFilter = 'all';
+            sortFilterAndRender();
+        });
+        document.getElementById('filterWishlistBtn').addEventListener('click', () => {
+            currentFilter = 'wishlist';
+            sortFilterAndRender();
+        });
+        document.getElementById('filterBorrowedBtn').addEventListener('click', () => {
+            currentFilter = 'borrowed';
+            sortFilterAndRender();
+        });
+        
+        // --- Modal Event Listeners ---
+        
+        cancelModalBtn.addEventListener('click', () => {
+            modal.classList.remove('show');
+            bookToDeleteId = null;
+        });
+        
+        confirmDeleteBtn.addEventListener('click', () => {
+            if (bookToDeleteId) {
+                modal.classList.remove('show');
+                deleteBook(bookToDeleteId);
+                bookToDeleteId = null;
+            }
+        });
+
+    </script>
+</body>
+</html>
